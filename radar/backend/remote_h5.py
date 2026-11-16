@@ -24,6 +24,11 @@ RETRY_STATUS = {429, 500, 502, 503, 504}
 MAX_ATTEMPTS = 7
 
 
+# Pre-signed URLs from the Earthdata redirect, reused for a while: resolving costs ~2 s per file.
+_SIGNED: dict[str, tuple[str, int, float]] = {}
+SIGNED_REUSE_S = 1500  # shorter than the 1800 s after which a file refreshes its URL anyway
+
+
 class ArchiveUnavailable(IOError):
     """NASA's archive kept refusing requests. The message never contains signed URLs."""
 
@@ -42,6 +47,7 @@ class RemoteFile(io.RawIOBase):
         self.block_size = block_size
         self.max_blocks = max_blocks
         self.blocks: OrderedDict[int, bytes] = OrderedDict()
+        self.exact: dict[int, bytes] = {}  # prefetched byte ranges, by start offset (exactly what h5py asks for)
         self.lock = threading.Lock()
         self.pos = 0
         self.bytes_fetched = 0
@@ -49,7 +55,11 @@ class RemoteFile(io.RawIOBase):
         self.orig_url = url
         self._resolve()
 
-    def _resolve(self):
+    def _resolve(self, reuse: bool = True):
+        hit = _SIGNED.get(self.orig_url) if reuse else None
+        if hit and time.time() - hit[2] < SIGNED_REUSE_S:
+            self.url, self.size, self.resolved_at = hit
+            return
         name = self.orig_url.rsplit("/", 1)[-1]
         for attempt in range(MAX_ATTEMPTS):
             try:
@@ -74,6 +84,7 @@ class RemoteFile(io.RawIOBase):
         cr = r.headers.get("Content-Range", "")
         self.size = int(cr.split("/")[-1]) if "/" in cr else int(r.headers["Content-Length"])
         self.resolved_at = time.time()
+        _SIGNED[self.orig_url] = (self.url, self.size, self.resolved_at)
 
     def _get_block(self, i: int) -> bytes:
         with self.lock:
@@ -81,11 +92,19 @@ class RemoteFile(io.RawIOBase):
                 self.blocks.move_to_end(i)
                 return self.blocks[i]
         start = i * self.block_size
-        end = min(start + self.block_size, self.size) - 1
+        data = self._fetch(start, min(start + self.block_size, self.size) - 1)
+        with self.lock:
+            self.blocks[i] = data
+            if len(self.blocks) > self.max_blocks:
+                self.blocks.popitem(last=False)
+        return data
+
+    def _fetch(self, start: int, end: int) -> bytes:
+        """One HTTP Range request for bytes start..end (inclusive), with retries."""
         status = None
         for attempt in range(MAX_ATTEMPTS):
             if time.time() - self.resolved_at > 1800:  # pre-signed URLs expire; refresh early
-                self._resolve()
+                self._resolve(reuse=False)
             try:
                 with _GLOBAL_SLOTS:
                     r = self.session.get(self.url, headers={"Range": f"bytes={start}-{end}"}, timeout=120)
@@ -97,7 +116,7 @@ class RemoteFile(io.RawIOBase):
             if r.status_code == 206:
                 break
             if r.status_code in (401, 403):  # signed URL expired
-                self._resolve()
+                self._resolve(reuse=False)
                 continue
             if r.status_code in RETRY_STATUS:
                 time.sleep(_backoff(attempt, r.headers.get("Retry-After")))
@@ -110,43 +129,50 @@ class RemoteFile(io.RawIOBase):
         with self.lock:
             self.bytes_fetched += len(data)
             self.n_requests += 1
-            self.blocks[i] = data
-            if len(self.blocks) > self.max_blocks:
-                self.blocks.popitem(last=False)
         return data
 
-    def prefetch(self, ranges: list[tuple[int, int]], workers: int = 8) -> list[int]:
-        """Fetch every block covering the given (offset, size) byte ranges in
-        parallel, so the following h5py reads are served from memory instead of
-        one HTTP round trip at a time. Returns the ids of the blocks it fetched;
-        pass them to `drop` once read, so a small server does not run out of memory."""
-        need = sorted({i for off, size in ranges if size > 0
-                       for i in range(off // self.block_size, (off + size - 1) // self.block_size + 1)})
-        with self.lock:
-            need = [i for i in need if i not in self.blocks]
-            self._base_blocks = getattr(self, "_base_blocks", self.max_blocks)
-            self.max_blocks = max(self.max_blocks, len(self.blocks) + len(need) + 16)
-        if not need:
-            return []
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=min(workers, len(need))) as ex:
-            list(ex.map(self._get_block, need))
-        return need
+    MERGE_GAP = 64 * 1024        # chunks closer than this are fetched in one request
+    MAX_SEGMENT = 8 * 1024 ** 2  # but no request larger than this
 
-    def drop(self, block_ids: list[int]):
-        """Forget prefetched blocks that have been read, and shrink the cache back."""
+    def prefetch(self, ranges: list[tuple[int, int]], workers: int = 8) -> list[int]:
+        """Fetch exactly the given (offset, size) byte ranges (HDF5 chunks) in parallel, merging
+        neighbours into one request, so the following h5py reads are served from memory instead of
+        one HTTP round trip at a time and no bytes outside the chunks are downloaded. Returns the
+        offsets it stored; pass them to `drop` once read, so a small server does not run out of memory."""
+        want = sorted({(off, size) for off, size in ranges if size > 0 and off not in self.exact})
+        if not want:
+            return []
+        segments: list[list[tuple[int, int]]] = []  # each: chunks fetched by one request
+        for off, size in want:
+            if segments:
+                s0 = segments[-1][0][0]; e0 = segments[-1][-1][0] + segments[-1][-1][1]
+                if off - e0 <= self.MERGE_GAP and off + size - s0 <= self.MAX_SEGMENT:
+                    segments[-1].append((off, size)); continue
+            segments.append([(off, size)])
+
+        def get(seg):
+            s0 = seg[0][0]; e0 = max(o + n for o, n in seg)
+            data = self._fetch(s0, e0 - 1)
+            with self.lock:
+                for o, n in seg:
+                    self.exact[o] = data[o - s0:o - s0 + n]
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(workers, len(segments))) as ex:
+            list(ex.map(get, segments))
+        return [o for o, _ in want]
+
+    def drop(self, offsets: list[int]):
+        """Forget prefetched ranges that have been read."""
         with self.lock:
-            for i in block_ids:
-                self.blocks.pop(i, None)
-            self.max_blocks = getattr(self, "_base_blocks", self.max_blocks)
-            while len(self.blocks) > self.max_blocks:
-                self.blocks.popitem(last=False)
+            for o in offsets:
+                self.exact.pop(o, None)
 
     def release(self):
-        """Free every cached block (the file stays usable; blocks are fetched again if needed)."""
+        """Free every cached byte (the file stays usable; bytes are fetched again if needed)."""
         with self.lock:
             self.blocks.clear()
-            self.max_blocks = getattr(self, "_base_blocks", self.max_blocks)
+            self.exact.clear()
 
     # --- io.RawIOBase API used by h5py ---
     def readable(self):
@@ -173,6 +199,11 @@ class RemoteFile(io.RawIOBase):
             return 0
         n = min(n, self.size - self.pos)
         out = memoryview(b)
+        hit = self.exact.get(self.pos)
+        if hit is not None and len(hit) >= n:  # a prefetched chunk, read exactly as h5py asks
+            out[:n] = hit[:n]
+            self.pos += n
+            return n
         done = 0
         while done < n:
             i, off = divmod(self.pos + done, self.block_size)

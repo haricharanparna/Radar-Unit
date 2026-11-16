@@ -137,12 +137,15 @@ def _chunk_ranges(ds, rs: slice, cs: slice) -> list[tuple[int, int]]:
     return out
 
 
-def read_window_multi(f, xlim: tuple, ylim: tuple, rf=None, grid: str = GRID, pols=("HH", "HV"), on_pol=None):
+def read_window_multi(f, xlim: tuple, ylim: tuple, rf=None, grid: str = GRID, pols=("HH", "HV"), on_pol=None,
+                      together: bool = False):
     """Read every available polarisation in the window ONCE, with the quality
     masks read a single time. If `rf` (RemoteFile) is given, each dataset's chunks
     are downloaded in parallel. Returns (x, y, {pol: (power, usable)}) or None.
     With `on_pol(pol, x, y, power, usable)`, each polarisation is handed over as soon as it
-    is read and not kept, so only one full-resolution window is in memory at a time."""
+    is read and not kept, so only one full-resolution window is in memory at a time.
+    With `together`, the chunks of the masks and every polarisation are fetched in one parallel
+    batch first (faster: one wait instead of four, but every dataset's raw bytes are held at once)."""
     g = f[grid]
     x = g["xCoordinates"][()]
     y = g["yCoordinates"][()]
@@ -151,7 +154,14 @@ def read_window_multi(f, xlim: tuple, ylim: tuple, rf=None, grid: str = GRID, po
     if xi.size == 0 or yi.size == 0:
         return None
     rs, cs = slice(int(yi.min()), int(yi.max()) + 1), slice(int(xi.min()), int(xi.max()) + 1)
+    batch = []
+    if together and rf is not None:
+        names = [n for n in ("mask", "inputDataExceptionMask", *(DIAGONAL_TERMS[p] for p in pols)) if n in g]
+        batch = rf.prefetch([r for n in names for r in _chunk_ranges(g[n], rs, cs)], workers=16)
+
     def read(name):
+        if batch:  # already fetched together
+            return g[name][rs, cs]
         # One dataset at a time: fetch its chunks in parallel, read them, then free the raw
         # blocks. Holding every dataset's blocks at once (30-90 MB per acquisition) is what ran
         # a 512 MB server out of memory.
@@ -179,6 +189,8 @@ def read_window_multi(f, xlim: tuple, ylim: tuple, rf=None, grid: str = GRID, po
             del p, ok
         else:
             out[pol] = (p, ok)
+    if batch:
+        rf.drop(batch)
     return x[cs], y[rs], out
 
 

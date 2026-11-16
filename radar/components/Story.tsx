@@ -177,12 +177,24 @@ function PlaceBar({ m, onResult, onCase, searchRef }: {
       if (!stack) throw new Error(a.note ?? "NISAR has no comparable images here yet. Try a place on land or a coast.");
       const dual = stack.granules.filter((g) => g.pols.includes("HV"));
       const pick = (dual.length >= 2 ? dual : stack.granules).slice(-4);
-      setStep(`Reading ${pick.length} real radar passes (${pick[0].date} → ${pick[pick.length - 1].date}, ${MAT_LABEL[stack.maturity] ?? stack.maturity.toLowerCase()}). About half a minute…`);
+      const what = `${pick.length} real radar passes (${pick[0].date} → ${pick[pick.length - 1].date}, ${MAT_LABEL[stack.maturity] ?? stack.maturity.toLowerCase()})`;
+      setStep(`Reading ${what}. About 15 seconds…`);
       // "Dhaka, Dhaka Metropolitan, Dhaka Division, Bangladesh" -> "Dhaka, Bangladesh"
       const parts = p.name.split(",").map((s) => s.trim()).filter(Boolean);
       const place = parts.length > 1 ? `${parts[0]}, ${parts[parts.length - 1]}` : parts[0] ?? q.trim();
-      let j = await startAnalysis({ lat: p.lat, lon: p.lon, scenes: pick.map((g) => g.scene), size_km: 20, detail: "standard", place });
-      while (j.status === "queued" || j.status === "running") { await sleep(1500); j = await getJob(j.job_id); }
+      // A story uses NISAR's 5 MHz side band (80 m cells): about 7x less to download than the main band,
+      // plenty for a story. Products without a side band fall back to the main band.
+      const run = async (detail: "quick" | "standard") => {
+        let j = await startAnalysis({ lat: p.lat, lon: p.lon, scenes: pick.map((g) => g.scene), size_km: 20, detail, place });
+        while (j.status === "queued" || j.status === "running") {
+          await sleep(700);
+          j = await getJob(j.job_id);
+          if (j.status === "running" && j.message) setStep(`${j.message}: ${what}`);
+        }
+        return j;
+      };
+      let j = await run("quick");
+      if (j.status === "error" && /frequencyB|band/i.test(j.message ?? "")) j = await run("standard");
       if (j.status === "error" || !j.result) throw new Error(j.message ?? "The analysis failed.");
       setStep("Writing your story…");
       const mm = await loadResult(j.result);

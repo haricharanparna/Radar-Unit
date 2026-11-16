@@ -53,6 +53,10 @@ def _workers(env: str, small: int, large: int) -> int:
 # (Render free: 512 MB) gets 2 and 1: a 40 km, 6-date analysis then peaks near 310 MB
 # (it was 655 MB before strip binning). A laptop gets 4 and 2. Override with the env vars.
 SCENE_WORKERS = _workers("DELTA_PULSE_SCENE_WORKERS", 2, 4)
+# With room to spare, each acquisition's masks and both polarisations are fetched in ONE parallel batch
+# (~30 MB per acquisition at once) instead of one dataset after another; a small host keeps the
+# one-at-a-time path that holds a single dataset in memory.
+FETCH_TOGETHER = SCENE_WORKERS >= 4
 JOB_WORKERS = _workers("DELTA_PULSE_JOB_WORKERS", 1, 2)
 
 
@@ -109,24 +113,19 @@ def run_analysis(out: Path, lat: float, lon: float, size_km: float, granules: li
     min_vf = SCREENING["min_valid_fraction"]["value"]
     stats = {"bytes_fetched": 0, "requests": 0}
 
-    # Open the first scene to fix the grid (all scenes of a stack share the frame CRS).
-    progress("Connecting to the NASA ASF archive", 0.02)
-    first = RemoteFile(granules[0]["url"], token)
-    with h5py.File(first, "r") as f:
-        epsg = scene_epsg(f)
-    first.release()
-    x0, y1, res, nx, ny = window_grid(lat, lon, size_km, epsg, detail)
-    progress(f"Reading {len(granules)} acquisitions from NASA's archive in parallel", 0.05)
-    xlim = (x0 - res, x0 + nx * res + res)
-    ylim = (y1 - ny * res - res, y1 + res)
+    # Every acquisition is opened at once: each one fixes the window from its own projection (all
+    # acquisitions of a stack share the frame CRS, checked below), so none waits for another to open.
+    progress(f"Reading {len(granules)} acquisitions from NASA's archive in parallel", 0.03)
 
     def process(idx_g):
         idx, g = idx_g
-        rf = first if idx == 0 else RemoteFile(g["url"], token)
+        rf = RemoteFile(g["url"], token)
         dbs, vfs = {}, {}
         with h5py.File(rf, "r") as f:
-            if scene_epsg(f) != epsg:
-                raise AnalysisError(f"{g['date']} is in a different projection; cannot align")
+            epsg = scene_epsg(f)
+            x0, y1, res, nx, ny = window_grid(lat, lon, size_km, epsg, detail)
+            xlim = (x0 - res, x0 + nx * res + res)
+            ylim = (y1 - ny * res - res, y1 + res)
             if grid_path not in f:
                 raise AnalysisError(f"{g['date']} has no {grid_path.rsplit('/', 1)[-1]} band; use standard detail")
             def binned(pol, x, y, p_raw, ok):  # each polarisation is binned and freed as soon as it is read
@@ -136,9 +135,9 @@ def run_analysis(out: Path, lat: float, lon: float, size_km: float, granules: li
                 p[vf < min_vf] = np.nan
                 dbs[pol], vfs[pol] = radar.to_db(p), vf
 
-            read_window_multi(f, xlim, ylim, rf=rf, grid=grid_path, on_pol=binned)
+            read_window_multi(f, xlim, ylim, rf=rf, grid=grid_path, on_pol=binned, together=FETCH_TOGETHER)
         rf.release()
-        return idx, g, dbs, vfs, rf.bytes_fetched, rf.n_requests
+        return idx, g, dbs, vfs, rf.bytes_fetched, rf.n_requests, (epsg, x0, y1, res, nx, ny)
 
     results = [None] * len(granules)
     done = 0
@@ -146,15 +145,19 @@ def run_analysis(out: Path, lat: float, lon: float, size_km: float, granules: li
     with ThreadPoolExecutor(max_workers=SCENE_WORKERS) as ex:  # total HTTP concurrency is capped in remote_h5
         futs = [ex.submit(process, ig) for ig in enumerate(granules)]
         for fut in as_completed(futs):
-            idx, g, dbs, vfs, nb, nr = fut.result()
-            results[idx] = (g, dbs, vfs)
+            idx, g, dbs, vfs, nb, nr, geo = fut.result()
+            results[idx] = (g, dbs, vfs, geo)
             stats["bytes_fetched"] += nb
             stats["requests"] += nr
             done += 1
             progress(f"Read {g['date']} ({done}/{len(granules)})", 0.05 + 0.85 * done / len(granules))
 
+    epsg, x0, y1, res, nx, ny = results[0][3]
+    for g, _, _, geo in results[1:]:
+        if geo[0] != epsg:
+            raise AnalysisError(f"{g['date']} is in a different projection; cannot align")
     obs, grids = [], []
-    for g, dbs, vfs in results:
+    for g, dbs, vfs, _ in results:
         if "HH" not in dbs or not np.isfinite(dbs["HH"]).any():
             raise AnalysisError(f"no valid radar data at this location on {g['date']} "
                                 "(outside the swath or masked)")

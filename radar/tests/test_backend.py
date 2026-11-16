@@ -12,6 +12,15 @@ import nisar  # noqa: E402
 from analyze import AnalysisError, validate_request, window_grid  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _fresh_signed_urls():
+    """Each test starts without remembered archive URLs (they are shared across RemoteFiles)."""
+    import remote_h5
+    remote_h5._SIGNED.clear()
+    yield
+    remote_h5._SIGNED.clear()
+
+
 def g(date, **kw):
     base = dict(scene=f"S{date}", date=date, start_time=f"{date}T00:00:00Z", track=83, frame=8,
                 direction="ASCENDING", collection="NISAR_L2_GCOV_PROVISIONAL_V1", maturity="PROVISIONAL",
@@ -216,3 +225,56 @@ def test_every_answer_says_it_depends_on_the_origin():
     assert plain.get("vary") == "Origin" and "access-control-allow-origin" not in plain
     cors = get([(b"origin", b"http://localhost:3000")])
     assert cors.get("vary") == "Origin" and cors["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_prefetch_fetches_exact_chunks_merging_neighbours(monkeypatch):
+    """Chunks are downloaded byte-exact (no 1 MB block padding); close chunks share one request,
+    and h5py's reads of them are then served from memory."""
+    import remote_h5
+    data = bytes(range(256)) * 400  # 102,400 bytes
+    calls = []
+
+    class Resp:
+        def __init__(self, a, b):
+            self.status_code, self.content, self.url = 206, data[a:b + 1], "https://signed"
+            self.headers = {"Content-Range": f"bytes {a}-{b}/{len(data)}"}
+
+    def fake_get(self, url, headers=None, **kw):
+        a, b = map(int, headers["Range"].split("=")[1].split("-"))
+        calls.append((a, b))
+        return Resp(a, b)
+
+    monkeypatch.setattr(remote_h5.requests.Session, "get", fake_get)
+    f = remote_h5.RemoteFile("https://asf/x.h5", "tok", block_size=1000)
+    f.MERGE_GAP = 100
+    calls.clear()
+    stored = f.prefetch([(2000, 300), (2350, 200), (90000, 500)])  # first two merge, third is far away
+    assert sorted(calls) == [(2000, 2549), (90000, 90499)]
+    assert sorted(stored) == [2000, 2350, 90000]
+    calls.clear()
+    for off, n in [(2000, 300), (2350, 200), (90000, 500)]:
+        f.seek(off)
+        assert f.read(n) == data[off:off + n]
+    assert calls == []  # served from memory
+    f.drop(stored)
+    assert f.exact == {}
+
+
+def test_signed_url_is_reused_for_a_second_file(monkeypatch):
+    """Opening the same archive file again skips the ~2 s Earthdata redirect."""
+    import remote_h5
+    resolves = []
+
+    class Resp:
+        status_code, content, url = 206, b"x", "https://signed/x"
+        headers = {"Content-Range": "bytes 0-0/1000"}
+
+    def fake_get(self, url, headers=None, **kw):
+        if "Authorization" in (headers or {}):
+            resolves.append(url)
+        return Resp()
+
+    monkeypatch.setattr(remote_h5.requests.Session, "get", fake_get)
+    a = remote_h5.RemoteFile("https://asf/y.h5", "tok")
+    b = remote_h5.RemoteFile("https://asf/y.h5", "tok")
+    assert len(resolves) == 1 and a.url == b.url == "https://signed/x" and b.size == 1000
