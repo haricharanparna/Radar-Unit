@@ -1,0 +1,257 @@
+Explore a place
+
+Pick any place on Earth and see what NASA's radar found there: a short answer first, then the map, then the evidence behind it.
+
+Mason Neck, Fairfax County
+
+Your place. 10 radar passes, 21 Jun to 19 Oct 2026.
+
+Back to Tonle Sap
+Choose another place
+What the radar saw at Mason Neck, Fairfax County
+
+Three results that sum up this place, worked out from the same radar passes shown on the map below.
+
+Under vegetation
+INTERPRETED
++38%
+change in water under trees
+28 → 39 km² from 21 Jun 2026 to 19 Oct 2026
+
+What this means: Water standing under trees or shrubs, which cameras cannot see from above. Buildings give the same radar signature, so in a town this mostly counts built-up land.
+
+Open water
+INTERPRETED
+< 5 km²
+of calm open water
+on every pass in this window
+
+What this means: Rivers here are narrow or roughened by wind and currents, so the hidden-water signal tells the story.
+
+Sky at each pass
+OBSERVED
+4 of 10
+passes under heavy cloud
+More than half the sky was cloud when NISAR flew over (average 40%)
+
+What this means: On those passes a normal satellite photo would have shown mostly cloud. Radar saw the ground every time.
+
+How sure are we? These areas come from simple, uncalibrated radar thresholds. They show the pattern and its timing, not surveyed flood maps. Flooding stays labelled 
+UNCONFIRMED until other evidence confirms it.
+See the details
+
+Areas are counted only over ground the radar saw on every pass, so dates are compared fairly. 10 passes, 21 Jun 2026 – 19 Oct 2026, Mason Neck, Fairfax County.
+
+See it on the map
+
+These are the real radar images, one per satellite pass. Choose a view, then click a spot or draw a box to ask about that area.
+
+Live: Mason Neck, Fairfax County
+NISAR L2 GCOV · 2026-06-21 → 2026-10-19 · track 98D · provisional release P05023 · 40 m cells
+archive checked 2026-11-16 02:10 UTC · read 504 MB in 134.6 s
+Change map
+Data (JSON)
+Share link
+Compare two passes
+21 Jun → 3 Jul
+3 Jul → 15 Jul
+15 Jul → 27 Jul
+27 Jul → 20 Aug24d
+20 Aug → 1 Sept
+1 Sept → 13 Sept
+13 Sept → 25 Sept
+25 Sept → 7 Oct
+7 Oct → 19 Oct
+red = longer than the 12-day repeat
+Before and after
+What changed
+Likely water
+HH
+HV
+Analyse a new place here
+Draw region
+Whole area
+Basemap: standard
+Basemap: optical (Esri, undated)
+Basemap: NASA same day (10-19)
+3D terrain
+Opacity
+92%
+3 km
+Basemap: Esri, HERE, Garmin, © OpenStreetMap contributors
+Before 7 Oct 2026
+After 19 Oct 2026
+Strength of the radar echo
+HH γ⁰ backscatter, dB
+-25 dB
+0 dB
+weak: calm water
+strong: trees, towns
+Channel HH. Left of the handle is the earlier pass.
+Study area
+NISAR frame
+
+Before and after. Drag the handle to compare two dates. Black is calm water, which reflects the radar away. Light grey is land, trees and towns.
+
+Across the whole area: Little changed here. See the evidence
+Click a spot or draw a box on the map to ask about a different area.
+
+The evidence for the area you picked
+
+The answer in plain words first, then every number behind it with its exact radar term, each labelled by how certain it is.
+
+Little changed here
+
+Between 7 Oct 2026 and 19 Oct 2026, the echo across this area changed by less than a doubling or halving, our threshold for a real change. Try another date pair or a smaller area. Nothing here is confirmed on the ground; the details below show the evidence and what is still missing.
+
+How to read the numbers below
+The area you picked
+whole 20 km window
+What our rules conclude for it
+No significant radar change
+OBSERVED
+Two NISAR GCOV observations 12 days apart (2026-10-07 → 2026-10-19), same track and frame. Channels in both: HH, HV.
+CALCULATED
+HH changed by +0.2 dB (region mean, power-averaged); 0% of cells brightened and 1% darkened by at least 3 dB.
+CALCULATED
+HV changed by +0.1 dB. HH−HV difference: 7.5 → 7.5 dB.
+CALCULATED
+Cells with the double-bounce signature (flooded-vegetation-like): 18% → 19% of valid cells.
+INTERPRETED
+No region-wide change beyond the ±3 dB screening level.
+UNCONFIRMED
+Flooding is not confirmed. Needed: water level at the acquisition times (e.g. lake gauge), a cloud-free optical image within a few days, land-cover data to exclude built-up areas, and ideally field observations.
+UNCONFIRMED
+Screening thresholds are uncalibrated starting values (see Methods).
+Echo strength, HH channel γ⁰ backscatter
+CALCULATED
+
+Rises sharply when water stands under tree trunks; drops over calm open water.
+
+before
+-3.7dB
+after
+-3.5dB
+mean change
++0.2dB
+per cell: median +0.2 · p10 -0.9 · p90 +1.2 dB
+-10
+-5
+0
+5
+10
+0
+40000
+80000
+1% weaker by ≥3 dB
+0% stronger by ≥3 dB
+
+Each bar counts map cells by how much their echo changed (Δ in dB). 3 dB is twice as strong, or half.
+
+Echo strength, HV channel γ⁰ backscatter
+CALCULATED
+
+Responds to leaves and branches, so it shows vegetation changing.
+
+before
+-11.1dB
+after
+-11.0dB
+mean change
++0.1dB
+per cell: median +0.1 · p10 -0.9 · p90 +1.1 dB
+-10
+-5
+0
+5
+10
+0
+40000
+80000
+1% weaker by ≥3 dB
+0% stronger by ≥3 dB
+
+Each bar counts map cells by how much their echo changed (Δ in dB). 3 dB is twice as strong, or half.
+
+How much looks like water
+INTERPRETED
+before · 2026-10-07
+0% like open water (low backscatter)
+18% like water under trees (double bounce)
+after · 2026-10-19
+0% like open water (low backscatter)
+19% like water under trees (double bounce)
+
+Share of this area with each radar signature, from simple uncalibrated thresholds at 40 m. Buildings also give the amber signature.
+
+Where the data comes from
+OBSERVED
+measured on both dates
+52% of 250,000 cells
+days apart
+12 days
+validation stage (maturity)
+PROVISIONAL / PROVISIONAL
+release
+P05023 / P05023
+track·frame
+98D · 69
+cell size
+40 m (from 40 m layers)
+Echo strength on every pass
+CALCULATED
+
+The average echo over this area each time the satellite passed (region mean γ⁰, dB). Each point is a real pass; the dashed lines mark the two you are comparing.
+
+HH
+HV
+CSV
+06-21
+07-03
+07-15
+07-27
+08-20
+09-01
+09-13
+09-25
+10-07
+10-19
+-15 dB
+-12 dB
+-9 dB
+-6 dB
+-3 dB
+Daily rainfall at this location
+Context only, not a radar measurement · ERA5 / ERA5T reanalysis (ECMWF): daily precipitation and cloud cover; the most recent days are preliminary via Open-Meteo historical weather API (CC BY 4.0) 
+OBSERVED
+10 mm
+20 mm
+40 mm
+
+Faint cyan lines mark NISAR acquisition dates. Heavy rain before an acquisition can wet soil and leaves, which also changes backscatter.
+
+We tested the radar against data it never saw
+
+Independent checks are available for the Tonle Sap case study. For this place, the sensitivity test below shows whether the result depends on our threshold.
+
+Sensitivity test: does the story depend on the threshold?
+CALCULATED
+
+Water-like area (km²) recomputed with the HH threshold moved by ±2 dB, using the 40 m grid.
+
+HH below	06-21	07-03	07-15	07-27	08-20	09-01	09-13	09-25	10-07	10-19
+-20 dB	0	0	0	0	0	0	0	0	0	0
+-18 dB (used)	0	0	0	0	0	0	0	0	0	0
+-16 dB	0	0	0	0	0	0	0	0	0	0
+Robust: the direction of change (first → last date) is the same at all three thresholds.
+Robust: the date with the most water-like area is the same at all three thresholds.
+Next
+Go deeper
+Today's conditions, every pass on record, and two hands-on labs.
+DELTA PULSE
+How to use
+User guide
+
+Team RADAR UNIT, NASA Space Apps 2026. An open-source student project; not an official NASA product.
+
+Data: NASA-ISRO NISAR L2 GCOV via NASA ASF DAAC; JRC Global Surface Water; ERA5 and GloFAS via Open-Meteo; NASA GIBS. Basemaps: Esri (© Esri and data providers, © OpenStreetMap contributors).

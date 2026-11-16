@@ -1,0 +1,60 @@
+1
+00:00:00,000 --> 00:00:01,840
+Hi, we're team RADAR UNIT.
+
+2
+00:00:01,880 --> 00:00:04,700
+The problem: cameras miss floods
+hiding under trees and clouds.
+
+3
+00:00:04,740 --> 00:00:07,400
+Radar doesn't, and that's our challenge:
+Dancing with the SARs.
+
+4
+00:00:07,440 --> 00:00:09,840
+This is DELTA PULSE:
+revealing the water we cannot see.
+
+5
+00:00:09,880 --> 00:00:10,960
+Type in any place on Earth.
+
+6
+00:00:11,000 --> 00:00:13,660
+DELTA PULSE streams real NISAR data
+from NASA archive
+
+7
+00:00:13,700 --> 00:00:15,660
+and maps the hidden water in seconds.
+
+8
+00:00:15,700 --> 00:00:18,760
+For example, at Mason Neck,
+flooded forest grew by 40%.
+
+9
+00:00:18,800 --> 00:00:20,640
+Imagine fishers, farmers
+and water managers
+
+10
+00:00:20,680 --> 00:00:23,380
+watching their wetlands breathe
+throughout any storm,
+
+11
+00:00:23,420 --> 00:00:25,670
+anywhere on Earth, every 12 days.
+
+12
+00:00:25,800 --> 00:00:28,470
+DELTA PULSE:
+feel the pulse of the planet's water.
+
+13
+00:00:28,640 --> 00:00:29,510
+Thank you.
+
