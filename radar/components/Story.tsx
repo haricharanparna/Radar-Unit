@@ -608,6 +608,15 @@ export default function Story({ m, grid, rain, onResult, onCase, onOpenMap, shar
       {/* 5. HOW SURE */}
       {chapter("s-sure", () => (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+            <Tag kind="INTERPRETED" />The verdict reads the whole season, from the calculated areas in chapter 3.
+          </div>
+          {f.biggest && (
+            <div className="text-[13px] font-semibold text-text">
+              The biggest single step, {fmtDate(f.biggest.before)} → {fmtDate(f.biggest.after)}, checked rule by rule
+              {f.verdict && <span className="font-normal text-muted">: {f.verdict.toLowerCase()}</span>}
+            </div>
+          )}
           <ul className="space-y-2">
             {(f.statements.length ? f.statements : [{ kind: "UNCONFIRMED" as const, text: "Loading the detailed evidence…" }]).map((s, k) => (
               <li key={k} className="story-line flex gap-3 text-[14px] leading-snug" style={{ animationDelay: `${k * 120}ms` }}>

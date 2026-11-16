@@ -53,6 +53,95 @@ export function passLocalTime(f: StoryFacts) {
 
 type Change = { frac_increase?: number | null; frac_decrease?: number | null };
 
+/* ---------- the season verdict ----------
+ * The rule-based verdict (lib/data interpret) judges ONE pair of passes over the whole window, so a
+ * change that builds up pass by pass over a season almost never counts. This verdict reads the whole
+ * season of the place instead: what open water and hidden (under-vegetation) water did, from the same
+ * CALCULATED areas the story shows. It is an interpretation, hedged as one, and never declares a flood. */
+
+type Shape = "absent" | "steady" | "rose" | "fell" | "rose-fell" | "fell-rose";
+interface Trend { shape: Shape; first: number; last: number; peak: number; peakDate: string; low: number; lowDate: string; range: number }
+
+/** A change counts if it is at least a quarter of where it started and big enough to matter in this window. */
+function meaningful(a: number, b: number, windowKm2: number) {
+  return Math.abs(b - a) >= Math.max(2, 0.01 * windowKm2) && Math.abs(b - a) / Math.max(a, b, 1) >= 0.25;
+}
+
+export function trendOf(values: number[], dates: string[], windowKm2: number): Trend {
+  const n = values.length;
+  const iMax = values.indexOf(Math.max(...values)), iMin = values.indexOf(Math.min(...values));
+  const first = values[0], last = values[n - 1], peak = values[iMax], low = values[iMin];
+  const t = { first, last, peak, peakDate: dates[iMax], low, lowDate: dates[iMin], range: peak - low };
+  if (peak < 1) return { shape: "absent", ...t };
+  if (iMax > 0 && iMax < n - 1 && meaningful(first, peak, windowKm2) && meaningful(peak, last, windowKm2)) return { shape: "rose-fell", ...t };
+  if (iMin > 0 && iMin < n - 1 && meaningful(first, low, windowKm2) && meaningful(low, last, windowKm2)) return { shape: "fell-rose", ...t };
+  if (meaningful(first, last, windowKm2)) return { shape: last > first ? "rose" : "fell", ...t };
+  return { shape: "steady", ...t };
+}
+
+const SHORT: Record<"hidden" | "open", Record<Exclude<Shape, "absent" | "steady">, string>> = {
+  hidden: { rose: "hidden water rose through the season", fell: "hidden water drained away", "rose-fell": "hidden water came and went", "fell-rose": "hidden water dipped, then returned" },
+  open: { rose: "open water spread through the season", fell: "open water shrank", "rose-fell": "open water rose and fell", "fell-rose": "open water dipped, then returned" },
+};
+
+function trendSentence(label: string, t: Trend): string {
+  const k = (x: number) => `${fmtKm2(x)} square kilometres`;
+  switch (t.shape) {
+    case "absent": return `${label} was almost absent, under one square kilometre on every pass.`;
+    case "steady": return `${label} stayed much the same, around ${k((t.first + t.last) / 2)}.`;
+    case "rose": return `${label} grew from ${fmtKm2(t.first)} to ${k(t.last)}${t.peak > t.last * 1.1 ? `, peaking at ${fmtKm2(t.peak)} on ${fmtDate(t.peakDate)}` : ""}.`;
+    case "fell": return `${label} fell from ${fmtKm2(t.first)} to ${k(t.last)}.`;
+    case "rose-fell": return `${label} rose from ${fmtKm2(t.first)} to ${k(t.peak)} by ${fmtDate(t.peakDate)}, then fell back to ${fmtKm2(t.last)}.`;
+    case "fell-rose": return `${label} fell from ${fmtKm2(t.first)} to ${k(t.low)} by ${fmtDate(t.lowDate)}, then came back to ${fmtKm2(t.last)}.`;
+  }
+}
+
+export function seasonVerdict(f: StoryFacts): { headline: string; lines: string[] } {
+  const dates = f.passes.map((p) => p.date);
+  const win = f.commonKm2 ?? f.windowKm2;
+  const hidden = trendOf(f.passes.map((p) => p.flooded_veg_km2), dates, win);
+  const open = trendOf(f.passes.map((p) => p.water_km2), dates, win);
+  const moving = ([["hidden", hidden], ["open", open]] as const).filter(([, t]) => t.shape !== "absent" && t.shape !== "steady");
+  // the lead is the signal that changed most for its size (a lake's open water can swing by more km²
+  // than the forest around it, while the forest's hidden water grew five-fold)
+  const lead = moving.sort((a, b) => b[1].range / Math.max(b[1].peak, 1) - a[1].range / Math.max(a[1].peak, 1))[0];
+
+  const headline = lead ? SHORT[lead[0]][lead[1].shape as Exclude<Shape, "absent" | "steady">]
+    : hidden.shape === "absent" && open.shape === "absent" ? "little water to see here"
+    : "a steady season";
+
+  const lines: string[] = [];
+  const hiddenLine = trendSentence("Water hidden under vegetation", hidden);
+  const openLine = trendSentence("Open water", open);
+  const [main, other] = lead?.[0] === "open" ? [openLine, hiddenLine] : [hiddenLine, openLine];
+  lines.push(`Across ${f.n} passes, from ${fmtDate(f.first)} to ${fmtDate(f.last)}: ${main.charAt(0).toLowerCase()}${main.slice(1)}`);
+  lines.push(other);
+
+  // how the single biggest step compares (the rule-based check of one pair of passes)
+  if (f.biggest && f.verdict) {
+    const c = (f.biggest as unknown as { HH_change?: Change }).HH_change;
+    const pct = Math.round(((c?.frac_increase ?? 0) + (c?.frac_decrease ?? 0)) * 100);
+    const step = `${fmtDate(f.biggest.before)} to ${fmtDate(f.biggest.after)}`;
+    lines.push(
+      f.verdict === "No significant radar change"
+        ? lead ? "No single step between two passes was big enough to count on its own: the change built up, pass by pass."
+               : "No single step between two passes was big enough to count as a real change either."
+      : f.verdict === "Radar change detected" ? `One step stood out: from ${step}, ${pct} percent of the ground changed clearly, enough to count as a real radar change.`
+      : f.verdict === "Possible inundation-related signal" ? `One step, from ${step}, changed the way new water under vegetation does.`
+      : `The biggest step, from ${step}, changed ${pct} percent of the ground, but the radar alone cannot say what changed.`,
+    );
+  }
+
+  // how much to trust it
+  lines.push(f.n < 4 ? `With only ${f.n} passes, this is a first look, not yet a trend.`
+    : f.partialPasses.length ? `The satellite's strip covered only part of this area, so these numbers describe the ${fmtKm2(win)} square kilometres seen on every pass.`
+    : `${f.n} passes over ${f.spanDays} days make this a fair picture of the season here.`);
+
+  if (lead?.[0] === "hidden") lines.push("In towns, buildings throw the radar back the same way, so check the map before reading this as water.");
+  lines.push("None of this is a confirmed flood. A water-level gauge, a clear photograph, or someone standing there would confirm it.");
+  return { headline, lines };
+}
+
 export function buildScript(f: StoryFacts): ScriptChapter[] {
   const when = season(f.first, f.last);
   const local = passLocalTime(f);
@@ -150,15 +239,12 @@ export function buildScript(f: StoryFacts): ScriptChapter[] {
     chapters.push({ id: "s-change", mood: "change", n: 4, kicker: "The turning point", title: `${fmtDate(f.biggest.before)} → ${fmtDate(f.biggest.after)}`, lines });
   }
 
-  // 5. HOW SURE
+  // 5. HOW SURE: this place's own verdict, from its whole season
+  const sv = seasonVerdict(f);
   chapters.push({
     id: "s-sure", mood: "sure", n: f.biggest ? 5 : 4, kicker: "What we know, and what we don't",
-    title: f.verdict ? `Verdict: ${f.verdict.toLowerCase()}.` : "What we can, and cannot, say.",
-    lines: [
-      "A good story is an honest one.",
-      `${f.verdict ? `The evidence points to this: ${f.verdict.toLowerCase()}. ` : ""}Every claim here carries a label: what was observed, what was calculated, what is only interpreted, and what is still unconfirmed.`,
-      "This story never declares a flood. It shows the evidence, and what would confirm it: a water-level gauge, a clear photograph, or someone standing there.",
-    ],
+    title: `Verdict: ${sv.headline}.`,
+    lines: sv.lines,
   });
 
   // EPILOGUE
