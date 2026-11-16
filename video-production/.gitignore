@@ -1,0 +1,5 @@
+project/node_modules/
+project/out/
+project/public/recordings/
+recordings/_frames*/
+recordings/scout/

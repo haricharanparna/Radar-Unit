@@ -1,0 +1,15 @@
+import { launch, SITE, scrollToEl } from "./recorder.mjs";
+const { browser, context } = await launch();
+const page = await context.newPage();
+page.on("console", (m) => console.log("console", m.type(), m.text().slice(0, 200)));
+page.on("requestfailed", (r) => console.log("FAILED", r.url().slice(0, 120), r.failure()?.errorText));
+await page.goto(`${SITE}/explore`, { waitUntil: "networkidle" });
+await page.getByRole("button", { name: /Choose another place/i }).first().click();
+const feed = page.getByText("Newest NISAR acquisitions worldwide").first();
+await scrollToEl(page, feed, 70, 10);
+await page.waitForTimeout(20000);
+await page.screenshot({ path: "../recordings/scout/globe_debug.png" });
+console.log(await page.evaluate(() => { const c = document.createElement("canvas"); const g = c.getContext("webgl2"); return g ? g.getParameter(g.RENDERER) : "no webgl2"; }));
+const reqs = await page.evaluate(() => performance.getEntriesByType("resource").map((e) => e.name).filter((n) => /arcgis|tile|asf|earthdata|cmr/i.test(n)).slice(0, 15));
+console.log(reqs.join("\n"));
+await browser.close();

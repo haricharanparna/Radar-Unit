@@ -1,0 +1,20 @@
+// Inspect the live app: search Mason Neck, list the archive stacks, screenshot each stage.
+import { chromium } from "playwright";
+const OUT = process.argv[2] ?? "inspect";
+const SITE = "https://delta-pulse-nisar.vercel.app";
+const browser = await chromium.launch({ channel: "msedge" });
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, colorScheme: "dark" });
+page.on("console", (m) => { if (m.type() === "error") console.log("console error:", m.text()); });
+await page.goto(`${SITE}/explore`, { waitUntil: "networkidle" });
+await page.screenshot({ path: `${OUT}/01_explore.png` });
+const choose = page.getByRole("button", { name: /Choose another place/i });
+if (await choose.count()) await choose.first().click();
+await page.waitForTimeout(800);
+const input = page.getByLabel("Place name or coordinates");
+await input.fill("Mason Neck, Virginia");
+await page.screenshot({ path: `${OUT}/02_typed.png` });
+await input.press("Enter");
+await page.waitForTimeout(4000);
+await page.screenshot({ path: `${OUT}/03_geocode.png` });
+console.log("PAGE AFTER GEOCODE:\n", (await page.locator("main").innerText()).slice(0, 4000));
+await browser.close();

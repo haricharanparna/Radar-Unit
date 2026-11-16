@@ -1,0 +1,36 @@
+// Inspect step 2: pick Mason Neck, list stacks, run a real analysis over all dates, dump the result text.
+import { chromium } from "playwright";
+import fs from "node:fs";
+const OUT = process.argv[2] ?? "inspect";
+const SITE = "https://delta-pulse-nisar.vercel.app";
+const browser = await chromium.launch({ channel: "msedge" });
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, colorScheme: "dark" });
+page.on("console", (m) => { if (m.type() === "error") console.log("console error:", m.text()); });
+page.on("response", async (r) => {
+  const u = r.url();
+  if (/\/api\/(analyze|results\/.*manifest)/.test(u)) console.log("API", r.status(), u);
+});
+await page.goto(`${SITE}/explore`, { waitUntil: "networkidle" });
+await page.getByRole("button", { name: /Choose another place/i }).first().click();
+const input = page.getByLabel("Place name or coordinates");
+await input.fill("Mason Neck, Virginia");
+await input.press("Enter");
+await page.getByText("38.651, -77.180").first().click();
+await page.getByText(/GCOV granules/).first().waitFor({ timeout: 120000 });
+await page.waitForTimeout(1000);
+await page.screenshot({ path: `${OUT}/04_stacks.png`, fullPage: false });
+const box = page.getByText(/GCOV granules/).first().locator("xpath=ancestor::div[contains(@class,'mt-4')][1]");
+console.log("STACKS:\n", await box.innerText());
+const all = page.getByRole("button", { name: /select all/i });
+if (await all.count()) await all.first().click();
+await page.waitForTimeout(500);
+const analyse = page.getByRole("button", { name: /^Analyse \d+ acquisition/ });
+console.log("BUTTON:", await analyse.innerText());
+const t0 = Date.now();
+await analyse.click();
+await page.getByText(/^(Done|Loaded saved result)$/).first().waitFor({ timeout: 600000 });
+console.log("analysis took", (Date.now() - t0) / 1000, "s; url:", page.url());
+await page.waitForTimeout(4000);
+await page.screenshot({ path: `${OUT}/05_result.png` });
+fs.writeFileSync(`${OUT}/result_text.txt`, await page.locator("main").innerText());
+await browser.close();
